@@ -40,14 +40,17 @@ class Model:
         self.name = name
         self.usage = Usage()
 
-    def complete(self, messages: list[dict], tools: list[dict]):
-        """One model turn. Returns the assistant message object."""
-        resp = litellm.completion(
-            model=self.name,
-            messages=messages,
-            tools=tools,
-            tool_choice="auto",
-        )
+    def complete(self, messages: list[dict], tools: list[dict] | None = None):
+        """One model turn. Returns the assistant message object.
+
+        `tools` is optional: the agent passes its tool specs, but tool-less
+        callers (the user simulator, the judge) omit it.
+        """
+        kwargs: dict = {"model": self.name, "messages": messages}
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = "auto"
+        resp = litellm.completion(**kwargs)
         self._track(resp)
         return resp.choices[0].message
 
