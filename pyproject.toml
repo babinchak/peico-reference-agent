@@ -1,0 +1,22 @@
+[project]
+name = "peico-reference-agent"
+version = "0.1.0"
+description = "Reference system-under-test for the peico-bench insurance agent benchmark"
+requires-python = ">=3.11"
+dependencies = [
+    "litellm>=1.40",
+    "python-dotenv>=1.0",
+]
+
+[project.scripts]
+peico-agent = "peico_agent.cli:main"
+
+[dependency-groups]
+dev = []
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["peico_agent", "peico_agent.tools"]
