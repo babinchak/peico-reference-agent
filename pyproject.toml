@@ -6,10 +6,12 @@ requires-python = ">=3.11"
 dependencies = [
     "litellm>=1.40",
     "python-dotenv>=1.0",
+    "pyyaml>=6.0",
 ]
 
 [project.scripts]
 peico-agent = "peico_agent.cli:main"
+peico-eval = "peico_eval.runner:main"
 
 [dependency-groups]
 dev = []
@@ -19,4 +21,4 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["peico_agent", "peico_agent.tools"]
+packages = ["peico_agent", "peico_agent.tools", "peico_eval"]
