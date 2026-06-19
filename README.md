@@ -41,16 +41,43 @@ uv run peico-agent --model anthropic/claude-sonnet-4-6
 
 Commands inside the chat: `/reset`, `/usage`, `/quit`.
 
-## Tools (iteration 1 — read surface only)
+## Tools
 
-| Tool | What it does |
-|---|---|
-| `query_db(sql)` | Read-only SQL (SELECT/WITH) over the EVERGREEN schema. The main navigation tool. |
-| `quote(facts, as_of)` | Runs peico-bench's deterministic rating engine → premium + breakdown. |
-| `search_kb(query)` / `get_doc(doc_id)` | The policy wiki (underwriting, compliance, glossary). |
+**Reads** are wide open; **writes** are rule-enforcing (validated, parameterized,
+never raw SQL from the model).
 
-`check_eligibility` and the **write tools** (`bind_policy`, `endorse_policy`, …)
-come next, alongside a versioned user simulator to replace the human-in-CLI.
+| Tool | Kind | What it does |
+|---|---|---|
+| `query_db(sql)` | read | Read-only SQL (SELECT/WITH) over the EVERGREEN schema. The main navigation tool. |
+| `quote(facts, as_of)` | read | Runs peico-bench's deterministic rating engine → premium + breakdown. |
+| `search_kb(query)` / `get_doc(doc_id)` | read | The policy wiki (underwriting, compliance, glossary). |
+| `update_contact(cust_id, email, phone)` | write | Change a customer's contact details after validating the customer exists. |
+
+More write tools (`bind_policy`, `endorse_policy`, …) and `check_eligibility`
+come next.
+
+## Evaluation (`peico_eval`)
+
+A τ²-bench-style harness lives in the separate `peico_eval` package: it runs a
+scenario where an LLM **user simulator** talks to the agent over an isolated copy
+of the world, then grades the outcome.
+
+```bash
+peico-eval peico_eval/tasks/update_contact_email.yaml        # one trial
+peico-eval peico_eval/tasks/update_contact_email.yaml -k 5 -v # five trials, verbose
+```
+
+Each trial gets its own `World.from_seed()` copy, so runs are independent (and
+parallelizable later). A **task** (YAML) defines the customer persona + goal, any
+per-task setup, and a list of **checks**:
+
+- **changeset** — diffs the seed→final database and asserts it equals the expected
+  change (so "the right thing changed" *and* "nothing else did" in one check).
+  Deterministic and free.
+- **judge** — an LLM grades a behavioral rubric against the transcript. Flagged as
+  stochastic; mark it `required: false` to keep it advisory.
+
+`pass^k` reports how many of `k` trials passed.
 
 ## Configuration
 
