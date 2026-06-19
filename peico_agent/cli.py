@@ -16,6 +16,7 @@ import sys
 from .config import settings
 from .loop import Agent
 from .model import Model
+from .world import World
 
 
 def _print_tool(name: str, args: dict, result: str) -> None:
@@ -37,37 +38,43 @@ def main(argv: list[str] | None = None) -> int:
 
     settings.require_world()
     model = Model(args.model or settings.model)
-    agent = Agent(model, settings.max_tool_iters)
+    # An isolated, writable copy of the seed: this session can't corrupt the
+    # canonical world, and it mirrors how the harness will run each eval task.
+    world = World.from_seed()
+    agent = Agent(model, settings.max_tool_iters, world)
     on_tool = _print_tool if args.verbose else None
 
     print(f"PEICO reference agent — model: {model.name}")
-    print(f"World: {settings.db_path}  (today = {settings.anchor_date})")
+    print(f"World: {settings.db_path}  (session copy, today = {settings.anchor_date})")
     print("You are the customer. Commands: /reset  /usage  /quit\n")
 
-    while True:
-        try:
-            user = input("you> ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print()
-            break
-        if not user:
-            continue
-        if user in ("/quit", "/exit"):
-            break
-        if user == "/reset":
-            agent.reset()
-            print("(conversation reset)\n")
-            continue
-        if user == "/usage":
-            print(f"  usage: {model.usage}\n")
-            continue
+    try:
+        while True:
+            try:
+                user = input("you> ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                break
+            if not user:
+                continue
+            if user in ("/quit", "/exit"):
+                break
+            if user == "/reset":
+                agent.reset()
+                print("(conversation reset)\n")
+                continue
+            if user == "/usage":
+                print(f"  usage: {model.usage}\n")
+                continue
 
-        try:
-            reply = agent.send(user, on_tool=on_tool)
-        except Exception as exc:  # noqa: BLE001 — keep the REPL alive
-            print(f"\n[error] {exc}\n")
-            continue
-        print(f"\nrep> {reply}\n")
+            try:
+                reply = agent.send(user, on_tool=on_tool)
+            except Exception as exc:  # noqa: BLE001 — keep the REPL alive
+                print(f"\n[error] {exc}\n")
+                continue
+            print(f"\nrep> {reply}\n")
+    finally:
+        world.cleanup()
 
     print(f"\nSession usage: {model.usage}")
     return 0

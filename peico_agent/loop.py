@@ -16,9 +16,10 @@ from .prompts import SYSTEM_PROMPT
 class Agent:
     """Holds the conversation and runs the tool loop for each customer turn."""
 
-    def __init__(self, model: Model, max_tool_iters: int):
+    def __init__(self, model: Model, max_tool_iters: int, world):
         self.model = model
         self.max_tool_iters = max_tool_iters
+        self.world = world
         self.messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
         self._tool_specs = tools.specs()
 
@@ -42,7 +43,7 @@ class Agent:
             for call in msg.tool_calls:
                 name = call.function.name
                 args = _parse_args(call.function.arguments)
-                result = tools.dispatch(name, args)
+                result = tools.dispatch(name, args, world=self.world)
                 if on_tool:
                     on_tool(name, args, result)
                 self.messages.append(

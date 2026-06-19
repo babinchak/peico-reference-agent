@@ -16,7 +16,7 @@ import json
 import re
 
 from ..config import settings
-from ..world import load_rating, open_ro, rating_context
+from ..world import load_rating
 from . import register
 
 _MAX_ROWS = 200
@@ -47,13 +47,13 @@ _SQL_FORBIDDEN = re.compile(
         "required": ["sql"],
     },
 )
-def query_db(sql: str) -> str:
+def query_db(world, sql: str) -> str:
     stripped = sql.strip().rstrip(";")
     if ";" in stripped:
         return json.dumps({"error": "one_statement_only"})
     if not _SQL_OK.match(stripped) or _SQL_FORBIDDEN.search(stripped):
         return json.dumps({"error": "read_only", "detail": "Only SELECT/WITH queries are allowed."})
-    con = open_ro()
+    con = world.connect()
     try:
         cur = con.execute(stripped)
         rows = [dict(r) for r in cur.fetchmany(_MAX_ROWS + 1)]
@@ -98,11 +98,11 @@ def query_db(sql: str) -> str:
         "required": ["facts"],
     },
 )
-def quote(facts: dict, as_of: str | None = None) -> str:
+def quote(world, facts: dict, as_of: str | None = None) -> str:
     rating = load_rating()
-    when = as_of or settings.anchor_date
+    when = as_of or world.anchor_date
     try:
-        result = rating.price(facts, when, rating_context())
+        result = rating.price(facts, when, world.rating_context())
     except Exception as exc:  # noqa: BLE001 — missing/invalid facts are feedback
         return json.dumps({"error": "quote_failed", "detail": str(exc)})
     return json.dumps({"as_of": when, **result}, default=str)
@@ -125,11 +125,11 @@ def quote(facts: dict, as_of: str | None = None) -> str:
         "required": ["query"],
     },
 )
-def search_kb(query: str, limit: int = 8) -> str:
+def search_kb(world, query: str, limit: int = 8) -> str:
     terms = [t for t in re.split(r"\s+", query.strip().lower()) if t]
     if not terms:
         return json.dumps({"results": []})
-    con = open_ro()
+    con = world.connect()
     try:
         docs = con.execute(
             "SELECT doc_id, title, category, applies_to, body_md FROM kb_documents"
@@ -166,8 +166,8 @@ def search_kb(query: str, limit: int = 8) -> str:
         "required": ["doc_id"],
     },
 )
-def get_doc(doc_id: str) -> str:
-    con = open_ro()
+def get_doc(world, doc_id: str) -> str:
+    con = world.connect()
     try:
         row = con.execute(
             "SELECT doc_id, title, category, applies_to, body_md FROM kb_documents WHERE doc_id = ?",

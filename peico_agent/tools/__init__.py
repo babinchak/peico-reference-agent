@@ -56,8 +56,12 @@ def specs() -> list[dict]:
     ]
 
 
-def dispatch(name: str, args: dict) -> str:
-    """Run a tool by name. Always returns a string for the tool-result message.
+def dispatch(name: str, args: dict, *, world) -> str:
+    """Run a tool by name against `world`. Always returns a string result.
+
+    `world` is the per-session World, injected here (not model-provided) and
+    passed as the tool's first argument — this is what keeps tools free of global
+    state and makes concurrent sessions safe.
 
     Tool-level failures are returned as structured error strings (not raised) so
     the model sees them and can recover — recovering from a structured rejection
@@ -67,7 +71,7 @@ def dispatch(name: str, args: dict) -> str:
     if tool is None:
         return json.dumps({"error": "unknown_tool", "name": name})
     try:
-        result = tool.fn(**args)
+        result = tool.fn(world, **args)
     except TypeError as exc:  # bad/missing arguments from the model
         return json.dumps({"error": "bad_arguments", "detail": str(exc)})
     except Exception as exc:  # noqa: BLE001 — surface, don't crash the loop
