@@ -81,3 +81,4 @@ def dispatch(name: str, args: dict, *, world) -> str:
 
 # Importing the tool modules registers their tools as a side effect.
 from . import read_tools  # noqa: E402,F401
+from . import write_tools  # noqa: E402,F401
