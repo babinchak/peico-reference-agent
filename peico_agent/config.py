@@ -43,6 +43,10 @@ class Settings:
     db_path: Path
     max_tool_iters: int
     anchor_date: str = WORLD_ANCHOR_DATE
+    # The simulator and judge aren't the system-under-test, so they default to a
+    # cheap model. Override per run with --sim-model / --judge-model.
+    sim_model: str = "anthropic/claude-haiku-4-5"
+    judge_model: str = "anthropic/claude-haiku-4-5"
 
     def require_world(self) -> None:
         """Fail fast with an actionable message if the dataset isn't built."""
@@ -61,6 +65,8 @@ def load_settings() -> Settings:
         bench_root=bench_root,
         db_path=_resolve_db_path(bench_root),
         max_tool_iters=int(os.getenv("PEICO_MAX_TOOL_ITERS", "12")),
+        sim_model=os.getenv("PEICO_SIM_MODEL", "anthropic/claude-haiku-4-5"),
+        judge_model=os.getenv("PEICO_JUDGE_MODEL", "anthropic/claude-haiku-4-5"),
     )
 
 

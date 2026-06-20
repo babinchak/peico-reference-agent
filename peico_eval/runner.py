@@ -103,8 +103,8 @@ def main(argv: list[str] | None = None) -> int:
     task = load_task(args.task)
 
     agent_model = Model(args.model or settings.model)
-    sim_model = Model(args.sim_model or settings.model)
-    judge_model = Model(args.judge_model or settings.model)
+    sim_model = Model(args.sim_model or settings.sim_model)
+    judge_model = Model(args.judge_model or settings.judge_model)
 
     print(f"Task: {task.task_id}  |  persona: {task.persona.name}  |  trials: {args.trials}")
     print(f"agent={agent_model.name}  sim={sim_model.name}  judge={judge_model.name}\n")

@@ -79,6 +79,11 @@ per-task setup, and a list of **checks**:
 
 `pass^k` reports how many of `k` trials passed.
 
+**Cost:** the simulator and judge default to Haiku (they aren't the
+system-under-test); override with `--sim-model` / `--judge-model`. Anthropic
+prompt caching is applied automatically, so the agent's large repeated prefix
+(system prompt + tool schemas + transcript) re-reads at ~10% of input price.
+
 ## Configuration
 
 All via env / `.env` (see `.env.example`): `PEICO_AGENT_MODEL`,
