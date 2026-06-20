@@ -23,7 +23,7 @@ class Tool:
     description: str
     parameters: dict  # JSON Schema for the arguments object
     fn: ToolFn
-    writes: bool = False  # reads are wide open; writes will be rule-enforcing
+    writes: bool = False  # informational: this tool mutates the world via env.write
 
 
 _REGISTRY: dict[str, Tool] = {}
@@ -56,12 +56,13 @@ def specs() -> list[dict]:
     ]
 
 
-def dispatch(name: str, args: dict, *, world) -> str:
-    """Run a tool by name against `world`. Always returns a string result.
+def dispatch(name: str, args: dict, *, env) -> str:
+    """Run a tool by name against the session `env`. Always returns a string result.
 
-    `world` is the per-session World, injected here (not model-provided) and
-    passed as the tool's first argument — this is what keeps tools free of global
-    state and makes concurrent sessions safe.
+    `env` is the bench's per-session environment handle (query/write/rate/
+    search_kb), injected here (not model-provided) and passed as the tool's first
+    argument — the agent never holds the database, only this handle, which is what
+    keeps tools free of global state and makes concurrent sessions safe.
 
     Tool-level failures are returned as structured error strings (not raised) so
     the model sees them and can recover — recovering from a structured rejection
@@ -71,7 +72,7 @@ def dispatch(name: str, args: dict, *, world) -> str:
     if tool is None:
         return json.dumps({"error": "unknown_tool", "name": name})
     try:
-        result = tool.fn(world, **args)
+        result = tool.fn(env, **args)
     except TypeError as exc:  # bad/missing arguments from the model
         return json.dumps({"error": "bad_arguments", "detail": str(exc)})
     except Exception as exc:  # noqa: BLE001 — surface, don't crash the loop

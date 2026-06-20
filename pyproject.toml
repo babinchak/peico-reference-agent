@@ -7,18 +7,23 @@ dependencies = [
     "litellm>=1.40",
     "python-dotenv>=1.0",
     "pyyaml>=6.0",
+    # The bench: the agent runs against its environment service and rating engine,
+    # and implements its AgentClient contract. One-way dependency (agent -> bench).
+    "peico",
 ]
 
 [project.scripts]
 peico-agent = "peico_agent.cli:main"
-peico-eval = "peico_eval.runner:main"
 
 [dependency-groups]
 dev = []
+
+[tool.uv.sources]
+peico = { path = "../peico-bench", editable = true }
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["peico_agent", "peico_agent.tools", "peico_eval"]
+packages = ["peico_agent", "peico_agent.tools"]

@@ -989,9 +989,9 @@ wheels = [
 ]
 
 [[package]]
-name = "peico-reference-agent"
+name = "peico"
 version = "0.1.0"
-source = { editable = "." }
+source = { editable = "../peico-bench" }
 dependencies = [
     { name = "litellm" },
     { name = "python-dotenv" },
@@ -1001,6 +1001,28 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "litellm", specifier = ">=1.40" },
+    { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8.0" }]
+
+[[package]]
+name = "peico-reference-agent"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "litellm" },
+    { name = "peico" },
+    { name = "python-dotenv" },
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "litellm", specifier = ">=1.40" },
+    { name = "peico", editable = "../peico-bench" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "pyyaml", specifier = ">=6.0" },
 ]

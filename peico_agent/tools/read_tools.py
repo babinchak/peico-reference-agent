@@ -1,32 +1,21 @@
 """Read tools — the wide-open read surface a rep uses to navigate EVERGREEN.
 
-Three modalities, mirroring a real rep's desk (peico-bench doc 07):
-  - structured data  -> query_db   (read-only SQL over the snapshot)
-  - the policy wiki  -> search_kb / get_doc
-  - the rules engine -> quote       (runs the real rating engine)
+These are the reference agent's *named* tools, each a thin wrapper over the bench
+environment service (peico-bench doc 07). Three modalities, mirroring a real rep's
+desk:
+  - structured data  -> query_db   (env.query: read-only SQL over the session world)
+  - the policy wiki  -> search_kb / get_doc (env.search_kb / env.query)
+  - the rules engine -> quote       (env.rate: the bench's deterministic engine)
 
-`check_eligibility` is intentionally absent in iteration 1: it needs a
-condition-predicate engine that does not yet exist in peico-bench, and building
-it here would fork the world's physics. Until then the agent reasons about
-eligibility from the rule rows (query_db) + the wiki — i.e. "hard mode".
+The agent owns these tools; a different implementation could expose entirely
+different ones over the same env primitives.
 """
 from __future__ import annotations
 
 import json
-import re
 
 from ..config import settings
-from ..world import load_rating
 from . import register
-
-_MAX_ROWS = 200
-
-# Only read statements. A bad agent must not be able to mutate via query_db.
-_SQL_OK = re.compile(r"^\s*(select|with)\b", re.IGNORECASE)
-_SQL_FORBIDDEN = re.compile(
-    r"\b(insert|update|delete|drop|alter|create|replace|attach|detach|pragma|vacuum|reindex)\b",
-    re.IGNORECASE,
-)
 
 
 @register(
@@ -37,7 +26,7 @@ _SQL_FORBIDDEN = re.compile(
         "the legacy EVERGREEN schema: customers, policies, vehicles, dwellings, "
         "coverages, tiers, eligibility_rules, discounts, promotions, rate_tables, "
         "kb_documents, and more. Money is stored in integer cents. Joins, filters, "
-        f"and CTEs are allowed. At most {_MAX_ROWS} rows are returned."
+        "and CTEs are allowed."
     ),
     parameters={
         "type": "object",
@@ -47,25 +36,8 @@ _SQL_FORBIDDEN = re.compile(
         "required": ["sql"],
     },
 )
-def query_db(world, sql: str) -> str:
-    stripped = sql.strip().rstrip(";")
-    if ";" in stripped:
-        return json.dumps({"error": "one_statement_only"})
-    if not _SQL_OK.match(stripped) or _SQL_FORBIDDEN.search(stripped):
-        return json.dumps({"error": "read_only", "detail": "Only SELECT/WITH queries are allowed."})
-    con = world.connect()
-    try:
-        cur = con.execute(stripped)
-        rows = [dict(r) for r in cur.fetchmany(_MAX_ROWS + 1)]
-    except Exception as exc:  # noqa: BLE001 — SQL errors are feedback for the model
-        return json.dumps({"error": "sql_error", "detail": str(exc)})
-    finally:
-        con.close()
-    truncated = len(rows) > _MAX_ROWS
-    return json.dumps(
-        {"rows": rows[:_MAX_ROWS], "row_count": min(len(rows), _MAX_ROWS), "truncated": truncated},
-        default=str,
-    )
+def query_db(env, sql: str) -> str:
+    return json.dumps(env.query(sql), default=str)
 
 
 @register(
@@ -98,14 +70,8 @@ def query_db(world, sql: str) -> str:
         "required": ["facts"],
     },
 )
-def quote(world, facts: dict, as_of: str | None = None) -> str:
-    rating = load_rating()
-    when = as_of or world.anchor_date
-    try:
-        result = rating.price(facts, when, world.rating_context())
-    except Exception as exc:  # noqa: BLE001 — missing/invalid facts are feedback
-        return json.dumps({"error": "quote_failed", "detail": str(exc)})
-    return json.dumps({"as_of": when, **result}, default=str)
+def quote(env, facts: dict, as_of: str | None = None) -> str:
+    return json.dumps(env.rate(facts, as_of), default=str)
 
 
 @register(
@@ -125,36 +91,8 @@ def quote(world, facts: dict, as_of: str | None = None) -> str:
         "required": ["query"],
     },
 )
-def search_kb(world, query: str, limit: int = 8) -> str:
-    terms = [t for t in re.split(r"\s+", query.strip().lower()) if t]
-    if not terms:
-        return json.dumps({"results": []})
-    con = world.connect()
-    try:
-        docs = con.execute(
-            "SELECT doc_id, title, category, applies_to, body_md FROM kb_documents"
-        ).fetchall()
-    finally:
-        con.close()
-    scored = []
-    for d in docs:
-        hay = f"{d['title']} {d['category']} {d['body_md']}".lower()
-        score = sum(hay.count(t) for t in terms)
-        if score:
-            body = d["body_md"] or ""
-            scored.append((score, d, body))
-    scored.sort(key=lambda x: x[0], reverse=True)
-    results = [
-        {
-            "doc_id": d["doc_id"],
-            "title": d["title"],
-            "category": d["category"],
-            "applies_to": d["applies_to"],
-            "snippet": (body[:240] + "…") if len(body) > 240 else body,
-        }
-        for _, d, body in scored[: max(1, limit)]
-    ]
-    return json.dumps({"results": results}, default=str)
+def search_kb(env, query: str, limit: int = 8) -> str:
+    return json.dumps(env.search_kb(query, limit), default=str)
 
 
 @register(
@@ -166,15 +104,15 @@ def search_kb(world, query: str, limit: int = 8) -> str:
         "required": ["doc_id"],
     },
 )
-def get_doc(world, doc_id: str) -> str:
-    con = world.connect()
-    try:
-        row = con.execute(
-            "SELECT doc_id, title, category, applies_to, body_md FROM kb_documents WHERE doc_id = ?",
-            (doc_id,),
-        ).fetchone()
-    finally:
-        con.close()
-    if row is None:
-        return json.dumps({"error": "not_found", "doc_id": doc_id})
-    return json.dumps(dict(row), default=str)
+def get_doc(env, doc_id: str) -> str:
+    safe = doc_id.replace("'", "''")
+    result = env.query(
+        "SELECT doc_id, title, category, applies_to, body_md "
+        f"FROM kb_documents WHERE doc_id = '{safe}'"
+    )
+    rows = result.get("rows") if isinstance(result, dict) else None
+    if rows:
+        return json.dumps(rows[0], default=str)
+    if isinstance(result, dict) and "error" in result:
+        return json.dumps(result, default=str)
+    return json.dumps({"error": "not_found", "doc_id": doc_id})

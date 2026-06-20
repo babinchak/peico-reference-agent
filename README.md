@@ -12,8 +12,8 @@ built in tandem.
 |---|---|---|
 | Agent loop | hand-rolled **ReAct loop** (~one file) | A flat observe→act→observe loop is all a rep needs. Full control of the message list + exact token accounting matters for a benchmark. LangGraph/Pydantic-AI agents are a *future benchmarked variant*, plugged in through the same tool seam — not the baseline. |
 | Model access | **LiteLLM** | One interface across providers + built-in token/cost tracking, which the leaderboard reports. Swap models with one string. |
-| Tools | owned here, behind a **registry** | The agent owns its tools for now. The registry keeps an MCP wrapper / migration of writes into the harness cheap. |
-| World | `peico-bench/out/peico.sqlite` + its `rating.py` | Reads go straight at the DB; pricing calls the bench's real engine so the engine and DB never disagree. |
+| Tools | owned here, behind a **registry** | The agent owns its tools and loop; the bench grades outcomes, not tool calls. The registry keeps an MCP wrapper or alternate tool set a thin add. |
+| World | the bench's **environment service** (`query`/`write`/`rate`/`search_kb`) | The agent never holds the DB. It calls the per-session handle the bench injects; pricing goes through the bench's real engine, so the engine and DB never disagree. |
 
 ## Setup
 
@@ -43,49 +43,41 @@ Commands inside the chat: `/reset`, `/usage`, `/quit`.
 
 ## Tools
 
-**Reads** are wide open; **writes** are rule-enforcing (validated, parameterized,
-never raw SQL from the model).
+All tools are thin wrappers over the bench's environment service. Reads are wide
+open; writes now go through the bench's raw `write(sql)` primitive — rule
+enforcement lives in the expected outcome, not the write path (peico-bench
+principle 9), and the bench returns the resulting changeset as feedback. Wrapping
+writes in named, validating tools is this agent's choice, not a bench requirement.
 
 | Tool | Kind | What it does |
 |---|---|---|
-| `query_db(sql)` | read | Read-only SQL (SELECT/WITH) over the EVERGREEN schema. The main navigation tool. |
-| `quote(facts, as_of)` | read | Runs peico-bench's deterministic rating engine → premium + breakdown. |
-| `search_kb(query)` / `get_doc(doc_id)` | read | The policy wiki (underwriting, compliance, glossary). |
-| `update_contact(cust_id, email, phone)` | write | Change a customer's contact details after validating the customer exists. |
+| `query_db(sql)` | read | `env.query`: read-only SQL (SELECT/WITH) over the EVERGREEN schema. The main navigation tool. |
+| `quote(facts, as_of)` | read | `env.rate`: runs peico-bench's deterministic rating engine → premium + breakdown. |
+| `search_kb(query)` / `get_doc(doc_id)` | read | `env.search_kb` / `env.query`: the policy wiki (underwriting, compliance, glossary). |
+| `update_contact(cust_id, email, phone)` | write | `env.write`: change a customer's contact details (validates the email, then issues an `UPDATE`). |
+| `end_conversation()` | control | Signals the rep is done — the agent closes the session (the rep speaks last). |
 
-More write tools (`bind_policy`, `endorse_policy`, …) and `check_eligibility`
-come next.
+More write tools (`bind_policy`, `endorse_policy`, …) come next.
 
-## Evaluation (`peico_eval`)
+## Running against the benchmark
 
-A τ²-bench-style harness lives in the separate `peico_eval` package: it runs a
-scenario where an LLM **user simulator** talks to the agent over an isolated copy
-of the world, then grades the outcome.
+The eval **harness lives in `peico-bench`** (`peico.harness`): it owns the world,
+the environment service, the customer simulator, and grading. This repo provides
+the agent and a tiny adapter — `peico_agent.adapter:make_agent` — that the bench
+calls to drive the agent (`welcome` / `respond`). Run the bench's `peico-eval`
+from this venv (which has both packages):
 
 ```bash
-peico-eval peico_eval/tasks/update_contact_email.yaml        # one trial
-peico-eval peico_eval/tasks/update_contact_email.yaml -k 5 -v # five trials, verbose
+uv run peico-eval update_contact_email --agent peico_agent.adapter:make_agent       # one trial
+uv run peico-eval update_contact_email --agent peico_agent.adapter:make_agent -k 5 -v # five trials, verbose
 ```
 
-Each trial gets its own `World.from_seed()` copy, so runs are independent (and
-parallelizable later). A **task** (YAML) defines the customer persona + goal, any
-per-task setup, and a list of **checks**:
-
-- **changeset** — diffs the seed→final database and asserts it equals the expected
-  change (so "the right thing changed" *and* "nothing else did" in one check).
-  Deterministic and free.
-- **judge** — an LLM grades a behavioral rubric against the transcript. Flagged as
-  stochastic; mark it `required: false` to keep it advisory.
-
-`pass^k` reports how many of `k` trials passed.
-
-**Cost:** the simulator and judge default to Haiku (they aren't the
-system-under-test); override with `--sim-model` / `--judge-model`. Anthropic
-prompt caching is applied automatically, so the agent's large repeated prefix
-(system prompt + tool schemas + transcript) re-reads at ~10% of input price.
+Tasks, checks (changeset + judge), and `pass^k` are documented in peico-bench
+(`docs/08-agent-interface-and-harness-spec.md`).
 
 ## Configuration
 
 All via env / `.env` (see `.env.example`): `PEICO_AGENT_MODEL`,
-`PEICO_BENCH_ROOT` (defaults to `../peico-bench`), `PEICO_DB_PATH`,
-`PEICO_MAX_TOOL_ITERS`.
+`PEICO_MAX_TOOL_ITERS`. The bench harness reads `PEICO_SIM_MODEL`,
+`PEICO_JUDGE_MODEL`, and `PEICO_DB_PATH` from the same `.env` when you run the
+eval from here.
